@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>極速圖片上傳工具 - 自動複製剪貼簿 & ICO 匯出</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* 極簡淺色漸變與毛玻璃 */
+    body {
+      background: radial-gradient(circle at top, #f8fafc 0%, #e2e8f0 100%);
+      min-height: 100vh;
+    }
+    .glass-card {
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(226, 232, 240, 0.8);
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
+    }
+    .history-card {
+      background: rgba(248, 250, 252, 0.6);
+      border: 1px solid rgba(226, 232, 240, 0.5);
+    }
+    /* 隱藏滾動條但保持滾動 */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="text-slate-800 antialiased font-sans py-12 px-4 sm:px-6 lg:px-8">
+
+  <div class="max-w-4xl mx-auto space-y-8">
+    
+    <!-- 頂部 Header -->
+    <header class="text-center space-y-2">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 text-xs font-semibold tracking-wider uppercase mb-1">
+        <svg class="w-3.5 h-3.5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+        圖片 CDN 直連與圖示生成系統
+      </div>
+      <h1 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+        貼上即上傳 ‧ 自動複製
+      </h1>
+      <p class="text-slate-500 max-w-md mx-auto text-sm">
+        拖入檔案、點擊選取或直接按 <kbd class="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-xs text-slate-600">Ctrl + V</kbd> 貼上圖片
+      </p>
+    </header>
+
+    <!-- 主要功能區 -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      
+      <!-- 左側/中：拖曳與結果區 (佔 2 欄) -->
+      <div class="lg:col-span-2 space-y-6">
+        
+        <!-- 拖曳與貼上熱區 -->
+        <div id="dropzone" class="relative group cursor-pointer transition-all duration-300 rounded-2xl border-2 border-dashed border-slate-200 hover:border-emerald-500/50 bg-white/60 hover:bg-white/90 p-8 text-center flex flex-col items-center justify-center min-h-[260px] shadow-sm overflow-hidden">
+          <input type="file" id="fileInput" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+          
+          <!-- 上傳提示圖示與文字 -->
+          <div id="promptContainer" class="space-y-4 transition-all duration-300">
+            <div class="mx-auto w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100 group-hover:scale-110 group-hover:border-emerald-500/20 group-hover:bg-emerald-50 transition-all duration-300">
+              <svg class="w-8 h-8 text-slate-400 group-hover:text-emerald-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            </div>
+            <div class="space-y-1">
+              <p class="text-base font-medium text-slate-700">
+                拖曳圖片至此，或 <span class="text-emerald-600 group-hover:underline">瀏覽檔案</span>
+              </p>
+              <p class="text-xs text-slate-400">
+                支援鍵盤 <kbd class="px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded">Ctrl+V</kbd> 直接貼上圖片進行上傳
+              </p>
+            </div>
+            <div class="flex items-center justify-center gap-4 text-xs text-slate-400 font-medium">
+              <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Cloudflare R2</span>
+              <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>JPEG 輸出</span>
+            </div>
+          </div>
+
+          <!-- 上傳進行中狀態 -->
+          <div id="loadingContainer" class="hidden space-y-4">
+            <div class="relative w-12 h-12 mx-auto">
+              <div class="absolute inset-0 rounded-full border-4 border-slate-100"></div>
+              <div class="absolute inset-0 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin"></div>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-slate-700" id="progressText">圖片上傳並優化中...</p>
+              <p class="text-xs text-slate-400 mt-1">正在要求 Cloudflare CDN 節點...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 最新上傳成功的展示結果 -->
+        <div id="resultCard" class="hidden glass-card rounded-2xl p-6 space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+              <span class="relative flex h-2 w-2">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              最新上傳成功
+            </h3>
+            <span class="text-xs text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 font-medium">已自動複製連結</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+            <!-- 預覽圖 -->
+            <div class="md:col-span-1 aspect-video md:aspect-square bg-slate-50 rounded-xl overflow-hidden relative border border-slate-100 flex items-center justify-center group">
+              <img id="resultPreview" src="" alt="Uploaded Preview" class="object-contain w-full h-full max-h-48" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%2394a3b8%22 stroke-width=%221.5%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><rect width=%2218%22 height=%2218%22 x=%223%22 y=%223%22 rx=%222%22 ry=%222%22/><circle cx=%229%22 cy=%229%22 r=%222%22/><path d=%22m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21%22/></svg>'" />
+              <div class="absolute inset-0 bg-white/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-200">
+                <a id="resultOpenLink" href="#" target="_blank" class="p-2 bg-white hover:bg-slate-50 rounded-lg text-xs text-slate-700 border border-slate-200 shadow-sm flex items-center gap-1">
+                  新分頁開啟
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                </a>
+              </div>
+            </div>
+
+            <!-- 資訊與連結 -->
+            <div class="md:col-span-2 space-y-3">
+              <!-- 輸出連結 -->
+              <div class="space-y-1">
+                <label class="text-xs text-slate-400 block font-medium">圖片直連</label>
+                <div class="flex gap-2">
+                  <input type="text" id="resultUrl" readonly class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-600 focus:outline-none focus:border-emerald-500" />
+                  <button id="copyBtn" class="bg-emerald-600 hover:bg-emerald-50 text-white font-medium text-xs px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 flex-shrink-0 shadow-sm shadow-emerald-600/10">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+                    複製連結
+                  </button>
+                </div>
+              </div>
+
+              <!-- 格式選擇器 -->
+              <div class="flex gap-2">
+                <button onclick="formatResultUrl('raw')" id="fmt-raw" class="px-2.5 py-1 text-xs rounded-md bg-white text-slate-700 border border-slate-200 font-mono active-format shadow-sm">原始連結</button>
+                <button onclick="formatResultUrl('markdown')" id="fmt-markdown" class="px-2.5 py-1 text-xs rounded-md bg-transparent text-slate-400 hover:text-slate-600 font-mono">Markdown</button>
+                <button onclick="formatResultUrl('html')" id="fmt-html" class="px-2.5 py-1 text-xs rounded-md bg-transparent text-slate-400 hover:text-slate-600 font-mono">HTML</button>
+              </div>
+
+              <!-- 優化詳情 -->
+              <div class="grid grid-cols-3 gap-2 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100 text-center text-xs">
+                <div>
+                  <div class="text-slate-400">原始體積</div>
+                  <div id="infoOriginalSize" class="font-medium text-slate-600">-</div>
+                </div>
+                <div>
+                  <div class="text-slate-400">壓縮後體積</div>
+                  <div id="infoCompressedSize" class="font-medium text-emerald-600">-</div>
+                </div>
+                <div>
+                  <div class="text-slate-400">節省空間</div>
+                  <div id="infoRatio" class="font-medium text-blue-500">-</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ICO 圖示本地轉換區 (新增) -->
+          <div class="border-t border-slate-100 pt-4 mt-2 space-y-3">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                ICO 圖示轉換工具
+              </h4>
+              <span class="text-[10px] text-slate-400 font-medium">純前端本地產生 ‧ 無失真</span>
+            </div>
+            <div class="flex gap-2 items-center">
+              <select id="icoSize" class="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-emerald-500 flex-1 shadow-sm">
+                <option value="256" selected>256 x 256 (高畫質圖示，推薦)</option>
+                <option value="128">128 x 128</option>
+                <option value="64">64 x 64</option>
+                <option value="48">48 x 48 (Windows 軟體圖示)</option>
+                <option value="32">32 x 32 (標準桌面圖示)</option>
+                <option value="16">16 x 16 (網頁 Favicon)</option>
+              </select>
+              <button onclick="exportToIco()" class="bg-slate-800 hover:bg-slate-700 text-white font-medium text-xs px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 flex-shrink-0 shadow-sm">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                匯出並下載 ICO
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 右側：上傳參數設定與歷史紀錄 (佔 1 欄) -->
+      <div class="space-y-6">
+        
+        <!-- 上傳參數配置 (已預設為使用者要求的規格) -->
+        <div class="glass-card rounded-2xl p-5 space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h4 class="font-bold text-slate-700 text-sm flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+              上傳配置 (已預設)
+            </h4>
+            <span class="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 font-medium">配置生效</span>
+          </div>
+          
+          <div class="space-y-3 text-xs">
+            <!-- 預設儲存節點 -->
+            <div class="space-y-1">
+              <label class="text-slate-500 block font-medium">儲存目標位置</label>
+              <select id="storageDestination" class="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 focus:outline-none focus:border-emerald-500">
+                <option value="r2" selected>Cloudflare R2 (預設)</option>
+                <option value="local">本地預設儲存</option>
+                <option value="telegram">Telegram 儲存</option>
+              </select>
+            </div>
+
+            <!-- CDN 線路 -->
+            <div class="space-y-1">
+              <label class="text-slate-500 block font-medium">CDN 域名線路</label>
+              <select id="cdnDomain" class="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 focus:outline-none focus:border-emerald-500">
+                <option value="cloudflareimg.cdn.sn" selected>Cloudflare 預設 (cloudflareimg.cdn.sn)</option>
+                <option value="img.scdn.io">失控的防禦系統 (img.scdn.io)</option>
+                <option value="cloudflarecnimg.scdn.io">CloudFlare 中國優選</option>
+                <option value="edgeoneimg.cdn.sn">腾讯 EdgeOne</option>
+                <option value="esaimg.cdn1.vip">ESA 節點</option>
+              </select>
+            </div>
+
+            <!-- 輸出格式 -->
+            <div class="space-y-1">
+              <label class="text-slate-500 block font-medium">輸出格式優化</label>
+              <select id="outputFormat" class="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 focus:outline-none focus:border-emerald-500">
+                <option value="jpeg" selected>JPEG (預設)</option>
+                <option value="webp">WebP (省空間)</option>
+                <option value="png">PNG (無損)</option>
+                <option value="auto">Auto (自適應)</option>
+              </select>
+            </div>
+
+            <!-- 隱私上傳配置 -->
+            <div class="pt-2 border-t border-slate-100">
+              <label class="flex items-center gap-2 cursor-pointer mt-0.5">
+                <input type="checkbox" id="pwdEnable" class="rounded text-emerald-500 bg-white border-slate-200 focus:ring-emerald-500 focus:ring-offset-white focus:ring-1" onchange="togglePasswordInput()" />
+                <span class="text-slate-500">啟用密碼保護圖片</span>
+              </label>
+              <div id="passwordField" class="hidden mt-2 space-y-1.5">
+                <input type="password" id="imagePassword" placeholder="輸入圖片存取密碼" class="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 placeholder-slate-400 focus:outline-none focus:border-emerald-500" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 歷史紀錄 -->
+        <div class="glass-card rounded-2xl p-5 space-y-3 flex flex-col max-h-[360px]">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h4 class="font-bold text-slate-700 text-sm flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              上傳歷史
+            </h4>
+            <button onclick="clearHistory()" class="text-[10px] text-slate-400 hover:text-red-500 transition-colors">清除</button>
+          </div>
+          
+          <!-- 歷史列表滾動區 -->
+          <div id="historyList" class="space-y-2 overflow-y-auto no-scrollbar flex-1 text-xs">
+            <!-- 歷史項 -->
+            <div class="text-slate-400 text-center py-6" id="emptyHistoryText">
+              暫無歷史，上傳後會儲存在此
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- 自訂 Toast 訊息提示 -->
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 transform translate-y-10 opacity-0 transition-all duration-300 pointer-events-none flex items-center gap-2 px-4 py-3 rounded-xl bg-white border border-slate-100 shadow-xl shadow-slate-200/60 text-slate-700 text-sm font-medium">
+    <svg class="w-5 h-5 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+    <span id="toastText">連結已自動複製到剪貼簿！</span>
+  </div>
+
+  <script>
+    const API_ENDPOINT = 'https://img.scdn.io/api/v1.php';
+    let rawImageUrl = ''; // 儲存最原始的外鏈，便於格式化
+    let currentFileBlob = null; // 儲存目前正在上傳的本地 Blob，確保產生 ICO 時免於 CORS 跨域限制
+    
+    // 初始化 DOM 元素
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const promptContainer = document.getElementById('promptContainer');
+    const loadingContainer = document.getElementById('loadingContainer');
+    const progressText = document.getElementById('progressText');
+    const resultCard = document.getElementById('resultCard');
+    const resultPreview = document.getElementById('resultPreview');
+    const resultOpenLink = document.getElementById('resultOpenLink');
+    const resultUrl = document.getElementById('resultUrl');
+    const copyBtn = document.getElementById('copyBtn');
+    
+    // 優化資訊元素
+    const infoOriginalSize = document.getElementById('infoOriginalSize');
+    const infoCompressedSize = document.getElementById('infoCompressedSize');
+    const infoRatio = document.getElementById('infoRatio');
+
+    // 格式化輸出單位
+    function formatBytes(bytes, decimals = 2) {
+      if (!bytes) return '0 Bytes';
+      const k = 1024;
+      const dm = decimals < 0 ? 0 : decimals;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    }
+
+    // 觸發 Toast 提示
+    function showToast(message, isError = false) {
+      const toast = document.getElementById('toast');
+      const toastText = document.getElementById('toastText');
+      toastText.innerText = message;
+      
+      // 切換成功/失敗主題
+      if (isError) {
+        toast.classList.remove('border-slate-100', 'text-slate-700');
+        toast.classList.add('border-red-100', 'text-red-600', 'bg-red-50');
+        toast.querySelector('svg').innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />`;
+        toast.querySelector('svg').classList.remove('text-emerald-500');
+        toast.querySelector('svg').classList.add('text-red-500');
+      } else {
+        toast.classList.remove('border-red-100', 'text-red-600', 'bg-red-50');
+        toast.classList.add('border-slate-100', 'text-slate-700', 'bg-white');
+        toast.querySelector('svg').innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />`;
+        toast.querySelector('svg').classList.remove('text-red-500');
+        toast.querySelector('svg').classList.add('text-emerald-500');
+      }
+
+      toast.classList.remove('translate-y-10', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+      
+      setTimeout(() => {
+        toast.classList.remove('translate-y-0', 'opacity-100');
+        toast.classList.add('translate-y-10', 'opacity-0');
+      }, 3000);
+    }
+
+    // 將文字複製到剪貼簿 (在 iframe 沙盒中有更佳相容性)
+    function copyTextToClipboard(text) {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      // 避免視窗捲動
+      textArea.style.top = "0";
+      textArea.style.left = "0";
+      textArea.style.position = "fixed";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      let successful = false;
+      try {
+        successful = document.execCommand('copy');
+      } catch (err) {
+        console.error('複製失敗: ', err);
+      }
+      
+      // 確保只移除一次，防止重複呼叫 removeChild 拋出 NotFoundError
+      if (textArea.parentNode) {
+        textArea.parentNode.removeChild(textArea);
+      }
+      
+      if (successful) {
+        showToast('連結已自動複製到剪貼簿！');
+        return true;
+      } else {
+        showToast('複製失敗，請手動選取複製', true);
+        return false;
+      }
+    }
+
+    // 格式化目前選取的結果格式 (RAW, Markdown, HTML)
+    function formatResultUrl(formatType) {
+      if (!rawImageUrl) return;
+      
+      const formats = ['raw', 'markdown', 'html'];
+      formats.forEach(f => {
+        const btn = document.getElementById(`fmt-${f}`);
+        if (f === formatType) {
+          btn.classList.add('bg-white', 'text-slate-700', 'border-slate-200', 'shadow-sm');
+          btn.classList.remove('bg-transparent', 'text-slate-400', 'border-transparent');
+        } else {
+          btn.classList.remove('bg-white', 'text-slate-700', 'border-slate-200', 'shadow-sm');
+          btn.classList.add('bg-transparent', 'text-slate-400', 'border-transparent');
+        }
+      });
+
+      if (formatType === 'markdown') {
+        resultUrl.value = `![image](${rawImageUrl})`;
+      } else if (formatType === 'html') {
+        resultUrl.value = `<img src="${rawImageUrl}" alt="image" />`;
+      } else {
+        resultUrl.value = rawImageUrl;
+      }
+    }
+
+    // 切換密碼輸入框
+    function togglePasswordInput() {
+      const pwdEnable = document.getElementById('pwdEnable').checked;
+      const passwordField = document.getElementById('passwordField');
+      if (pwdEnable) {
+        passwordField.classList.remove('hidden');
+      } else {
+        passwordField.classList.add('hidden');
+      }
+    }
+
+    // 拖曳狀態變化
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        dropzone.classList.add('border-emerald-400', 'bg-white');
+      }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('border-emerald-400', 'bg-white');
+      }, false);
+    });
+
+    // 拖曳放置檔案
+    dropzone.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      if (files.length > 0) {
+        handleUpload(files[0]);
+      }
+    });
+
+    // 選擇檔案
+    fileInput.addEventListener('change', (e) => {
+      if (fileInput.files.length > 0) {
+        handleUpload(fileInput.files[0]);
+      }
+    });
+
+    // 監聽 Ctrl+V 貼上事件
+    window.addEventListener('paste', (e) => {
+      const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const blob = items[i].getAsFile();
+          handleUpload(blob);
+          break; // 只上傳第一張圖片
+        }
+      }
+    });
+
+    // 核心上傳函數
+    async function handleUpload(file) {
+      if (!file) return;
+
+      // 保存本地 blob
+      currentFileBlob = file;
+
+      // 切換至 Loading 狀態
+      promptContainer.classList.add('hidden');
+      loadingContainer.classList.remove('hidden');
+      progressText.innerText = '圖片解析中...';
+
+      // 建立 FormData 物件並組裝資料
+      const formData = new FormData();
+      formData.append('image', file);
+      
+      // 讀取設定值
+      const storage_destination = document.getElementById('storageDestination').value;
+      const cdn_domain = document.getElementById('cdnDomain').value;
+      const outputFormat = document.getElementById('outputFormat').value;
+      const pwdEnable = document.getElementById('pwdEnable').checked;
+      const imagePassword = document.getElementById('imagePassword').value;
+
+      formData.append('storage_destination', storage_destination);
+      formData.append('cdn_domain', cdn_domain);
+      formData.append('outputFormat', outputFormat);
+
+      if (pwdEnable && imagePassword) {
+        formData.append('password_enabled', 'true');
+        formData.append('image_password', imagePassword);
+        formData.append('password_type', 'plain'); // 預設普通密碼模式
+      }
+
+      progressText.innerText = '圖片上傳至 R2 儲存中...';
+
+      // 呼叫 API (整合遞迴指數退避重試邏輯，提升穩健度)
+      try {
+        const responseData = await fetchWithRetry(API_ENDPOINT, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (responseData.success) {
+          const uploadedUrl = responseData.url || responseData.data.url;
+          rawImageUrl = uploadedUrl;
+          
+          // 渲染結果
+          resultUrl.value = uploadedUrl;
+          resultPreview.src = uploadedUrl;
+          resultOpenLink.href = uploadedUrl;
+
+          // 重新設定輸出格式為預設 (原始連結)
+          formatResultUrl('raw');
+
+          // 優化資訊填入
+          if (responseData.data) {
+            const orig = responseData.data.original_size;
+            const comp = responseData.data.compressed_size;
+            const ratio = responseData.data.compression_ratio;
+
+            infoOriginalSize.innerText = orig ? formatBytes(orig) : '-';
+            infoCompressedSize.innerText = comp ? formatBytes(comp) : '-';
+            infoRatio.innerText = ratio ? `${ratio}%` : '-';
+          } else {
+            infoOriginalSize.innerText = formatBytes(file.size);
+            infoCompressedSize.innerText = '自動壓縮';
+            infoRatio.innerText = '100% (預估)';
+          }
+
+          // 自動複製外鏈至剪貼簿
+          copyTextToClipboard(uploadedUrl);
+
+          // 顯示結果區卡片
+          resultCard.classList.remove('hidden');
+
+          // 保存歷史
+          saveToHistory({
+            url: uploadedUrl,
+            filename: responseData.data?.filename || file.name,
+            timestamp: new Date().toLocaleTimeString(),
+            size: responseData.data?.compressed_size || file.size
+          });
+
+        } else {
+          showToast(responseData.error || responseData.message || '上傳失敗，服務器返回錯誤！', true);
+        }
+      } catch (error) {
+        console.error(error);
+        showToast('網絡異常，請檢查您的網絡連線！', true);
+      } finally {
+        // 恢復上傳熱區狀態
+        promptContainer.classList.remove('hidden');
+        loadingContainer.classList.add('hidden');
+        fileInput.value = ''; // 清空檔案選擇器
+      }
+    }
+
+    // 指數退避 API 請求重試機制
+    async function fetchWithRetry(url, options, retries = 5, delay = 1000) {
+      try {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+          throw new Error(`HTTP status ${response.status}`);
+        }
+        return await response.json();
+      } catch (error) {
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return fetchWithRetry(url, options, retries - 1, delay * 2);
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    // 一鍵手動複製功能
+    copyBtn.addEventListener('click', () => {
+      copyTextToClipboard(resultUrl.value);
+    });
+
+    // 匯出至 ICO 的純前端核心邏輯
+    async function exportToIco() {
+      const size = parseInt(document.getElementById('icoSize').value, 10);
+      let imgSrc = '';
+
+      // 優選本地 Blob 來進行轉換，規避 CORS 跨網域限制
+      if (currentFileBlob) {
+        imgSrc = URL.createObjectURL(currentFileBlob);
+      } else if (rawImageUrl) {
+        imgSrc = rawImageUrl;
+      } else {
+        showToast('尚未上傳或選擇任何圖片！', true);
+        return;
+      }
+
+      showToast('正在產生 ICO 圖示...', false);
+
+      const img = new Image();
+      // 如果不是本地 Blob 則宣告 anonymous CORS
+      if (!currentFileBlob) {
+        img.crossOrigin = 'anonymous';
+      }
+
+      img.onload = function() {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          
+          ctx.clearRect(0, 0, size, size);
+          // 將影像等寬等高繪製到畫布上
+          ctx.drawImage(img, 0, 0, size, size);
+
+          canvas.toBlob(async function(blob) {
+            if (!blob) {
+              showToast('轉換為 PNG 失敗！', true);
+              return;
+            }
+
+            try {
+              const arrayBuffer = await blob.arrayBuffer();
+              const pngBuffer = new Uint8Array(arrayBuffer);
+              
+              // 建立一個 22 位元組的 ICO 標頭緩衝區 (針對單張圖片封裝)
+              const icoHeader = new ArrayBuffer(22);
+              const view = new DataView(icoHeader);
+              
+              // 1. ICO 檔頭 (6 bytes)
+              view.setUint16(0, 0, true);   // 保留欄位 (0)
+              view.setUint16(2, 1, true);   // 類型：1 代表 ICO 图标
+              view.setUint16(4, 1, true);   // 圖示目錄中的影像數量：1
+              
+              // 2. 目錄入口 (16 bytes)
+              const width = size >= 256 ? 0 : size;  // ICO 格式規定 256px 寫 0
+              const height = size >= 256 ? 0 : size; // ICO 格式規定 256px 寫 0
+              
+              view.setUint8(6, width);       // 寬度
+              view.setUint8(7, height);      // 高度
+              view.setUint8(8, 0);           // 調色盤色彩數，大於 8bpp 則填 0
+              view.setUint8(9, 0);           // 保留欄位
+              view.setUint16(10, 1, true);   // 色彩平面數
+              view.setUint16(12, 32, true);  // 每個像素的位元數 (32 bpp)
+              view.setUint32(14, pngBuffer.length, true); // 影像原始二進位大小 (PNG 大小)
+              view.setUint32(18, 22, true);  // 影像二進位資料的位址偏移量 (6 + 16 = 22)
+              
+              // 合併 ICO 檔頭與 PNG 資料
+              const finalIcoBuffer = new Uint8Array(22 + pngBuffer.length);
+              finalIcoBuffer.set(new Uint8Array(icoHeader), 0);
+              finalIcoBuffer.set(pngBuffer, 22);
+              
+              // 轉換為 x-icon blob 並下載
+              const icoBlob = new Blob([finalIcoBuffer], { type: 'image/x-icon' });
+              const downloadUrl = URL.createObjectURL(icoBlob);
+              
+              const a = document.createElement('a');
+              a.href = downloadUrl;
+              a.download = `favicon-${size}x${size}.ico`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              
+              // 釋放記憶體
+              URL.revokeObjectURL(downloadUrl);
+              if (currentFileBlob) {
+                URL.revokeObjectURL(imgSrc);
+              }
+              showToast('ICO 圖示下載已開始！');
+            } catch (err) {
+              console.error(err);
+              showToast('打包 ICO 二進位緩衝區失敗！', true);
+            }
+          }, 'image/png');
+        } catch (err) {
+          console.error(err);
+          showToast('畫布處理失敗，可能由於圖片跨域 CORS 阻擋。', true);
+        }
+      };
+
+      img.onerror = function() {
+        showToast('無法加載圖片資源進行格式轉換。', true);
+      };
+
+      img.src = imgSrc;
+    }
+
+    // 儲存至本地歷史紀錄
+    function saveToHistory(item) {
+      let history = JSON.parse(localStorage.getItem('img_cdn_history') || '[]');
+      // 避免重複
+      history = history.filter(h => h.url !== item.url);
+      history.unshift(item); // 最新放到最前面
+      // 限制 30 筆
+      if (history.length > 30) history.pop();
+      localStorage.setItem('img_cdn_history', JSON.stringify(history));
+      renderHistory();
+    }
+
+    // 清除歷史
+    function clearHistory() {
+      localStorage.removeItem('img_cdn_history');
+      renderHistory();
+    }
+
+    // 渲染歷史紀錄
+    function renderHistory() {
+      const historyList = document.getElementById('historyList');
+      const emptyHistoryText = document.getElementById('emptyHistoryText');
+      const history = JSON.parse(localStorage.getItem('img_cdn_history') || '[]');
+
+      if (history.length === 0) {
+        emptyHistoryText.classList.remove('hidden');
+        // 移除其他項
+        const items = historyList.querySelectorAll('.history-item');
+        items.forEach(el => el.remove());
+        return;
+      }
+
+      emptyHistoryText.classList.add('hidden');
+      
+      // 移除現有的
+      const items = historyList.querySelectorAll('.history-item');
+      items.forEach(el => el.remove());
+
+      // 產生新的
+      history.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'history-item history-card p-2.5 rounded-lg flex items-center justify-between gap-3 group cursor-pointer transition-all hover:border-slate-300 hover:bg-white shadow-sm';
+        card.innerHTML = `
+          <div class="flex items-center gap-2 min-w-0 flex-1">
+            <div class="w-10 h-10 rounded bg-slate-50 border border-slate-100 overflow-hidden flex-shrink-0 flex items-center justify-center">
+              <img src="${item.url}" alt="" class="object-cover w-full h-full" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23cbd5e1%22 stroke-width=%221.5%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><rect width=%2218%22 height=%2218%22 x=%223%22 y=%223%22 rx=%222%22 ry=%222%22/><path d=%22m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21%22/></svg>'" />
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="truncate font-medium text-slate-700 text-xs">${item.filename}</div>
+              <div class="text-[10px] text-slate-400 flex gap-2 mt-0.5">
+                <span>${item.timestamp}</span>
+                <span>${formatBytes(item.size)}</span>
+              </div>
+            </div>
+          </div>
+          <button class="copy-history-btn p-1.5 rounded-md hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors flex-shrink-0" title="複製此連結">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+          </button>
+        `;
+
+        // 綁定點擊事件
+        card.querySelector('.copy-history-btn').addEventListener('click', (e) => {
+          e.stopPropagation();
+          copyTextToClipboard(item.url);
+        });
+
+        // 點擊卡片本身，同步更新主預覽區
+        card.addEventListener('click', () => {
+          rawImageUrl = item.url;
+          currentFileBlob = null; // 歷史紀錄改用 URL 加載，清空本地 Blob
+          resultUrl.value = item.url;
+          resultPreview.src = item.url;
+          resultOpenLink.href = item.url;
+          infoOriginalSize.innerText = '-';
+          infoCompressedSize.innerText = formatBytes(item.size);
+          infoRatio.innerText = '-';
+          formatResultUrl('raw');
+          resultCard.classList.remove('hidden');
+          showToast('已切換到此圖片，並複製連結！');
+          copyTextToClipboard(item.url);
+        });
+
+        historyList.appendChild(card);
+      });
+    }
+
+    // 初始化載入歷史紀錄
+    window.onload = function() {
+      renderHistory();
+    }
+  </script>
+</body>
+</html>
